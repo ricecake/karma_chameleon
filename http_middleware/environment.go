@@ -24,7 +24,8 @@ func RateLimiter() gin.HandlerFunc {
 	ratelimit := viper.GetString("ratelimit")
 	rate, err := limiter.NewRateFromFormatted(ratelimit)
 	if err != nil {
-		log.Fatal(err)
+		log.Errorf("Rate limiter error: [%s]", err)
+		return nil
 	}
 	store := memStore.NewStore()
 	return ginAdapter.NewMiddleware(limiter.New(store, rate))
