@@ -1,9 +1,8 @@
 package http_middleware
 
 import (
-	"log"
-
 	"github.com/gin-gonic/gin"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"github.com/ulule/limiter/v3"
 	ginAdapter "github.com/ulule/limiter/v3/drivers/middleware/gin"
@@ -21,6 +20,7 @@ func NewEnvMiddleware() gin.HandlerFunc {
 }
 
 func RateLimiter() gin.HandlerFunc {
+	viper.SetDefault("ratelimit", "100-S")
 	ratelimit := viper.GetString("ratelimit")
 	rate, err := limiter.NewRateFromFormatted(ratelimit)
 	if err != nil {

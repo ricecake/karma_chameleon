@@ -97,6 +97,17 @@ func SecurityMiddleware() gin.HandlerFunc {
 		// allow.
 		// if there are path restrictions, defer to those if the origin is allowed.
 		// origin should allow wildcards.
+		// If no origin is specified, then that origin is allowed.
+		// if originAllowed {
+		// 	if hasPathLimit {
+		// 		if pathValid {
+		// 			allow;
+		// 		}
+		// 	}
+		// 	else {
+		// 		allow;
+		// 	}
+		// }
 
 		requestPath := c.Request.URL.Path
 		for _, allowPath := range viper.GetStringSlice("security.cors.allow") {
