@@ -3,30 +3,33 @@ package http_middleware
 import (
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 
 	"github.com/ricecake/karma_chameleon/util"
 )
 
 type AccessToken struct {
-	Issuer     string `json:"iss"`
-	UserCode   string `json:"sub"`
-	Expiration int64  `json:"exp"`
-	IssuedAt   int64  `json:"iat"`
-	Code       string `json:"jti"`
-	ClientId   string `json:"azp"`
+	Issuer     string `json:"iss"` // Who issued it?
+	UserCode   string `json:"sub"` // Who's it about?
+	Expiration int64  `json:"exp"` // When does it expire?
+	IssuedAt   int64  `json:"iat"` // When was it issued?
+	Code       string `json:"jti"` // What should we call it?
+	ClientId   string `json:"azp"` // What system was it given to?
 
-	Nonce         string   `json:"nonce,omitempty"` // Non-manditory fields MUST be "omitempty"
-	ValidResource string   `json:"aud,omitempty"`
-	ContextCode   string   `json:"ctx,omitempty"`
-	Scope         string   `json:"scope,omitempty"`
-	Permitted     []string `json:"perm,omitempty"`
+	// Non-manditory fields MUST be "omitempty"
+	Nonce          string    `json:"nonce,omitempty"` // Maybe have a random number
+	ContextCode    string    `json:"ctx,omitempty"`   // What usage context is this from
+	Scope          string    `json:"scope,omitempty"` // What level of access was requested
+	Permitted      []string  `json:"perm,omitempty"`  // What can the subject do
+	ValidResources *[]string `json:"aud,omitempty"`   // What resources are allowed to look at it.
 
-	Browser  string `json:"bro,omitempty"`
-	Strength string `json:"acr,omitempty"`
-	Method   string `json:"amr,omitempty"`
+	Browser  string `json:"bro,omitempty"` // What browser did it come from?
+	Strength string `json:"acr,omitempty"` // How safe is it?
+	Method   string `json:"amr,omitempty"` // How did they get it?
 }
 
 func NewAuthMiddleware(cacher util.VerifierCache) gin.HandlerFunc {
@@ -41,10 +44,7 @@ func NewAuthMiddleware(cacher util.VerifierCache) gin.HandlerFunc {
 
 		var accesstToken AccessToken
 
-		// Will need to add the ability to pass specific keys to DecodeJWTOpen.
-		// Also need to check against the revocation list to make sure it's still good.
-		// Revocation list, and key retrieval, should be parameterized, so that it can be re-used between projects.
-		keys, _, cacheErr := cacher.Fetch()
+		keys, revMap, cacheErr := cacher.Fetch()
 
 		if cacheErr != nil {
 			log.Error("Cache error: ", cacheErr)
@@ -59,22 +59,57 @@ func NewAuthMiddleware(cacher util.VerifierCache) gin.HandlerFunc {
 			return
 		}
 
-		// This is too naive.  Need to be setting the azp field to all of the clients that the sub
-		// has access to, in an array, and the checking that we're in that list.
+		now := time.Now()
+		if now.Unix() >= accesstToken.Expiration {
+			log.Error("Expired token")
+			c.AbortWithError(401, errors.New("Invalid authorization")).SetType(gin.ErrorTypePublic)
+			return
+		}
+
+		if !checkRevMap(revMap, accesstToken) {
+			log.Error("revoked token")
+			c.AbortWithError(401, errors.New("Invalid authorization")).SetType(gin.ErrorTypePublic)
+			return
+		}
+
 		// Possibly need to add a new tracking table for "Api clients", since those are the actual services making
 		// use of the tokens, and not just holding them.  Could then track which clients need to use which services...
 		// That could be neat...
-		// if accesstToken.ClientId != viper.GetString("basic.code") {
-		// 	log.Error("Invalid token authorized party: ", accesstToken.ClientId)
-		// 	c.AbortWithError(401, errors.New("Invalid authorization")).SetType(gin.ErrorTypePublic)
-		// 	return
-		// }
+		if accesstToken.ValidResources != nil {
+			if util.Contains(*accesstToken.ValidResources, []string{viper.GetString("basic.code")}) {
+				log.Error("Invalid token audience party")
+				c.AbortWithError(401, errors.New("Invalid authorization")).SetType(gin.ErrorTypePublic)
+				return
+			}
+		}
 
+		// Need to load this information into the request context as well.
 		c.Set("ValidAuth", true)
 		c.Set("Identity", accesstToken.UserCode)
 		c.Set("Token", accesstToken)
 		c.Next()
 	}
+}
+
+func checkRevMap(revMap util.RevMap, token AccessToken) bool {
+	checks := [][]string{
+		[]string{"ctx", token.ContextCode},
+		[]string{"bro", token.Browser},
+		[]string{"jti", token.Code},
+		[]string{"sub", token.UserCode},
+		[]string{"azp", token.ClientId},
+	}
+
+	revs := *revMap
+	for _, list := range checks {
+		if fieldKeys, found := revs[list[0]]; found {
+			if _, found := fieldKeys[list[1]]; found {
+				return false
+			}
+		}
+	}
+
+	return true
 }
 
 func AclChecks(required []string) gin.HandlerFunc {
