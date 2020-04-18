@@ -246,7 +246,7 @@ func (rev *RevMap) Revoked(field, key string) bool {
 }
 
 type VerifierCache interface {
-	Fetch() (*jose.JSONWebKeySet, RevMap, error)
+	Fetch() (*jose.JSONWebKeySet, *RevMap, error)
 }
 
 type IdpVerifierCache struct {
