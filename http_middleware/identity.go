@@ -100,12 +100,9 @@ func checkRevMap(revMap util.RevMap, token AccessToken) bool {
 		[]string{"azp", token.ClientId},
 	}
 
-	revs := *revMap
 	for _, list := range checks {
-		if fieldKeys, found := revs[list[0]]; found {
-			if _, found := fieldKeys[list[1]]; found {
-				return false
-			}
+		if revMap.Revoked(list[0], list[1]) {
+			return false
 		}
 	}
 

@@ -203,9 +203,46 @@ func CompactHash(data []byte) string {
 	return base64.RawURLEncoding.EncodeToString(hash[:])
 }
 
-type RevMap *map[string]map[string]struct {
-	CreatedAt int `json:"created_at"`
-	ExpiresIn int `json:"expires_in"`
+type RevMap struct {
+	cache map[string]map[string]struct {
+		CreatedAt int `json:"created_at"`
+		ExpiresIn int `json:"expires_in"`
+	}
+}
+
+func NewRevMap() *RevMap {
+	rev := &RevMap{}
+	rev.cache = make(map[string]map[string]struct {
+		CreatedAt int "json:\"created_at\""
+		ExpiresIn int "json:\"expires_in\""
+	})
+	return rev
+}
+
+func (rev *RevMap) Add(field, key string, created, duration int) {
+	revMap := rev.cache
+	typeMap, ok := revMap[field]
+	if !ok {
+		typeMap = make(map[string]struct {
+			CreatedAt int `json:"created_at"`
+			ExpiresIn int `json:"expires_in"`
+		})
+	}
+	typeMap[key] = struct {
+		CreatedAt int `json:"created_at"`
+		ExpiresIn int `json:"expires_in"`
+	}{
+		CreatedAt: created,
+		ExpiresIn: duration,
+	}
+}
+
+func (rev *RevMap) Revoked(field, key string) bool {
+	if fieldKeys, found := rev.cache[field]; found {
+		_, found := fieldKeys[key]
+		return found
+	}
+	return false
 }
 
 type VerifierCache interface {
@@ -224,7 +261,7 @@ func NewIdpVerifierCache() (newCacher *IdpVerifierCache) {
 	return newCacher
 }
 
-func (verifier *IdpVerifierCache) Fetch() (*jose.JSONWebKeySet, RevMap, error) {
+func (verifier *IdpVerifierCache) Fetch() (*jose.JSONWebKeySet, *RevMap, error) {
 	reqUrl, urlErr := url.Parse(viper.GetString("basic.auth"))
 
 	if urlErr != nil {
@@ -261,7 +298,7 @@ func (verifier *IdpVerifierCache) Fetch() (*jose.JSONWebKeySet, RevMap, error) {
 		return nil, nil, jsonRevErr
 	}
 
-	return &jwks, revMap, err
+	return &jwks, &revMap, err
 }
 
 func get(url string) (body []byte, err error) {
