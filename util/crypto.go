@@ -232,33 +232,49 @@ func (verifier *IdpVerifierCache) Fetch() (*jose.JSONWebKeySet, RevMap, error) {
 		return nil, nil, urlErr
 	}
 
-	var keyBuf bytes.Buffer
-	reqUrl.Path = "/publickeys"
+	keys, err := verifier.cacher.Get("public-key", time.Now().Add(5*time.Second), func() ([]byte, error) {
+		var buf bytes.Buffer
+		reqUrl.Path = "/publickeys"
 
-	_, httpBufErr := http.Get(&keyBuf, reqUrl.String())
-	if httpBufErr != nil {
-		return nil, nil, httpBufErr
-	}
+		_, httpErr := http.Get(&buf, reqUrl.String())
+		if httpErr != nil {
+			return nil, httpErr
+		}
 
-	var revBuf bytes.Buffer
-	reqUrl.Path = "/revocation"
+		return buf.Bytes(), nil
+	})()
 
-	_, httpRevErr := http.Get(&revBuf, reqUrl.String())
-	if httpRevErr != nil {
-		return nil, nil, httpRevErr
+	if err != nil {
+		return nil, nil, err
 	}
 
 	var jwks jose.JSONWebKeySet
-	jsonJwkErr := json.Unmarshal(keyBuf.Bytes(), &jwks)
+	jsonJwkErr := json.Unmarshal(keys, &jwks)
 	if jsonJwkErr != nil {
 		return nil, nil, jsonJwkErr
 	}
 
+	revs, err := verifier.cacher.Get("revocation", time.Now().Add(5*time.Second), func() ([]byte, error) {
+		var buf bytes.Buffer
+		reqUrl.Path = "/revocation"
+
+		_, httpErr := http.Get(&buf, reqUrl.String())
+		if httpErr != nil {
+			return nil, httpErr
+		}
+
+		return buf.Bytes(), nil
+	})()
+
+	if err != nil {
+		return nil, nil, err
+	}
+
 	var revMap RevMap
-	jsonRevErr := json.Unmarshal(revBuf.Bytes(), &revMap)
+	jsonRevErr := json.Unmarshal(revs, &revMap)
 	if jsonRevErr != nil {
 		return nil, nil, jsonRevErr
 	}
 
-	return &jwks, revMap, nil
+	return &jwks, revMap, err
 }
