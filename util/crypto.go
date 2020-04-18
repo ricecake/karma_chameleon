@@ -1,7 +1,6 @@
 package util
 
 import (
-	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -12,10 +11,10 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net/http"
 	"net/url"
 	"time"
 
-	"github.com/gorilla/http"
 	"github.com/pborman/uuid"
 	"github.com/spf13/viper"
 	"golang.org/x/crypto/bcrypt"
@@ -233,15 +232,8 @@ func (verifier *IdpVerifierCache) Fetch() (*jose.JSONWebKeySet, RevMap, error) {
 	}
 
 	keys, err := verifier.cacher.Get("public-key", time.Now().Add(5*time.Second), func() ([]byte, error) {
-		var buf bytes.Buffer
 		reqUrl.Path = "/publickeys"
-
-		_, httpErr := http.Get(&buf, reqUrl.String())
-		if httpErr != nil {
-			return nil, httpErr
-		}
-
-		return buf.Bytes(), nil
+		return get(reqUrl.String())
 	})()
 
 	if err != nil {
@@ -255,15 +247,8 @@ func (verifier *IdpVerifierCache) Fetch() (*jose.JSONWebKeySet, RevMap, error) {
 	}
 
 	revs, err := verifier.cacher.Get("revocation", time.Now().Add(5*time.Second), func() ([]byte, error) {
-		var buf bytes.Buffer
 		reqUrl.Path = "/revocation"
-
-		_, httpErr := http.Get(&buf, reqUrl.String())
-		if httpErr != nil {
-			return nil, httpErr
-		}
-
-		return buf.Bytes(), nil
+		return get(reqUrl.String())
 	})()
 
 	if err != nil {
@@ -277,4 +262,13 @@ func (verifier *IdpVerifierCache) Fetch() (*jose.JSONWebKeySet, RevMap, error) {
 	}
 
 	return &jwks, revMap, err
+}
+
+func get(url string) (body []byte, err error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	return ioutil.ReadAll(resp.Body)
 }
