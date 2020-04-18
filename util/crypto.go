@@ -218,10 +218,10 @@ type IdpVerifierCache struct {
 	cacher cacher.Cacher
 }
 
-func NewIdpVerifierCache() (newCacher IdpVerifierCache) {
+func NewIdpVerifierCache() (newCacher *IdpVerifierCache) {
 	newCacher.engine = engine.NewMemoryStore(15 * time.Second)
 	newCacher.cacher = cacher.NewCacher(newCacher.engine, 10, 10)
-	return &newCacher
+	return newCacher
 }
 
 func (verifier *IdpVerifierCache) Fetch() (*jose.JSONWebKeySet, RevMap, error) {
