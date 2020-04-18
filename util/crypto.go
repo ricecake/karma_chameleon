@@ -219,6 +219,7 @@ type IdpVerifierCache struct {
 }
 
 func NewIdpVerifierCache() (newCacher *IdpVerifierCache) {
+	newCacher = &IdpVerifierCache{}
 	newCacher.engine = engine.NewMemoryStore(15 * time.Second)
 	newCacher.cacher = cacher.NewCacher(newCacher.engine, 10, 10)
 	return newCacher
