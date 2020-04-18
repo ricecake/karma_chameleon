@@ -6,7 +6,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 
 	"github.com/ricecake/karma_chameleon/util"
 )
@@ -60,11 +59,16 @@ func NewAuthMiddleware(cacher util.VerifierCache) gin.HandlerFunc {
 			return
 		}
 
-		if accesstToken.ClientId != viper.GetString("basic.code") {
-			log.Error("Invalid token authorized party: ", accesstToken.ClientId)
-			c.AbortWithError(401, errors.New("Invalid authorization")).SetType(gin.ErrorTypePublic)
-			return
-		}
+		// This is too naive.  Need to be setting the azp field to all of the clients that the sub
+		// has access to, in an array, and the checking that we're in that list.
+		// Possibly need to add a new tracking table for "Api clients", since those are the actual services making
+		// use of the tokens, and not just holding them.  Could then track which clients need to use which services...
+		// That could be neat...
+		// if accesstToken.ClientId != viper.GetString("basic.code") {
+		// 	log.Error("Invalid token authorized party: ", accesstToken.ClientId)
+		// 	c.AbortWithError(401, errors.New("Invalid authorization")).SetType(gin.ErrorTypePublic)
+		// 	return
+		// }
 
 		c.Set("ValidAuth", true)
 		c.Set("Identity", accesstToken.UserCode)
