@@ -204,8 +204,8 @@ func CompactHash(data []byte) string {
 }
 
 type RevMap *map[string]map[string]struct {
-	CreatedAt string `json:"created_at"`
-	ExpiresIn string `json:"expires_in"`
+	CreatedAt int `json:"created_at"`
+	ExpiresIn int `json:"expires_in"`
 }
 
 type VerifierCache interface {
