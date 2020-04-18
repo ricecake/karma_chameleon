@@ -91,7 +91,7 @@ func NewAuthMiddleware(cacher util.VerifierCache) gin.HandlerFunc {
 	}
 }
 
-func checkRevMap(revMap util.RevMap, token AccessToken) bool {
+func checkRevMap(revMap *util.RevMap, token AccessToken) bool {
 	checks := [][]string{
 		[]string{"ctx", token.ContextCode},
 		[]string{"bro", token.Browser},
