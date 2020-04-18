@@ -4,7 +4,9 @@ go 1.13
 
 require (
 	github.com/flosch/pongo2 v0.0.0-20190707114632-bbf5a6c351f4
+	github.com/fresh8/go-cache v3.0.0+incompatible
 	github.com/gin-gonic/gin v1.6.2
+	github.com/gorilla/http v0.0.0-20190627042742-d268792bdee7
 	github.com/jinzhu/gorm v1.9.12
 	github.com/onsi/ginkgo v1.12.0
 	github.com/onsi/gomega v1.9.0

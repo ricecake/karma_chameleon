@@ -1,22 +1,31 @@
 package util
 
 import (
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net/url"
+	"time"
 
+	"github.com/gorilla/http"
 	"github.com/pborman/uuid"
+	"github.com/spf13/viper"
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/crypto/pbkdf2"
 	"golang.org/x/crypto/sha3"
 	"gopkg.in/square/go-jose.v2"
 	"gopkg.in/square/go-jose.v2/jwt"
+
+	"github.com/fresh8/go-cache/cacher"
+	engine "github.com/fresh8/go-cache/engine/memory"
 )
 
 // Hashing, encrypting, and strong random generation
@@ -96,11 +105,15 @@ func EncodeJWTOpen(tok interface{}) (string, error) {
 }
 
 func DecodeJWTOpen(raw string, decoded interface{}) error {
+	return DecodeJWTOpenFromKeys(raw, Keys, decoded)
+}
+
+func DecodeJWTOpenFromKeys(raw string, keys *jose.JSONWebKeySet, decoded interface{}) error {
 	tok, err := jwt.ParseSigned(raw)
 	if err != nil {
 		return err
 	}
-	return tok.Claims(Keys, decoded)
+	return tok.Claims(keys, decoded)
 }
 
 func EncodeJWTClose(tok interface{}, passphrase string) (string, error) {
@@ -189,4 +202,78 @@ func LoadKey(keyFile string) error {
 func CompactHash(data []byte) string {
 	hash := sha3.Sum256(data)
 	return base64.RawURLEncoding.EncodeToString(hash[:])
+}
+
+type RevMap *map[string]map[string]struct {
+	CreatedAt string `json:"created_at"`
+	ExpiresIn string `json:"expires_in"`
+}
+
+type VerifierCache interface {
+	Fetch() (*jose.JSONWebKeySet, RevMap, error)
+}
+
+type IdpVerifierCache struct {
+	engine *engine.Engine
+	cacher cacher.Cacher
+}
+
+func NewIdpVerifierCache() (newCacher IdpVerifierCache) {
+	newCacher.engine = engine.NewMemoryStore(15 * time.Second)
+	newCacher.cacher = cacher.NewCacher(newCacher.engine, 10, 10)
+	return newCacher
+}
+
+func (verifier *IdpVerifierCache) Fetch() (*jose.JSONWebKeySet, RevMap, error) {
+	reqUrl, urlErr := url.Parse(viper.GetString("basic.auth"))
+
+	if urlErr != nil {
+		return nil, nil, urlErr
+	}
+
+	keys, err := verifier.cacher.Get("public-key", time.Now().Add(5*time.Second), func() ([]byte, error) {
+		var buf bytes.Buffer
+		reqUrl.Path = "/publickeys"
+
+		_, httpErr := http.Get(&buf, reqUrl.String())
+		if httpErr != nil {
+			return nil, httpErr
+		}
+
+		return buf.Bytes(), nil
+	})()
+
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var jwks jose.JSONWebKeySet
+	jsonJwkErr := json.Unmarshal(keys, &jwks)
+	if jsonJwkErr != nil {
+		return nil, nil, jsonJwkErr
+	}
+
+	revs, err := verifier.cacher.Get("revocation", time.Now().Add(5*time.Second), func() ([]byte, error) {
+		var buf bytes.Buffer
+		reqUrl.Path = "/revocation"
+
+		_, httpErr := http.Get(&buf, reqUrl.String())
+		if httpErr != nil {
+			return nil, httpErr
+		}
+
+		return buf.Bytes(), nil
+	})()
+
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var revMap RevMap
+	jsonRevErr := json.Unmarshal(revs, &revMap)
+	if jsonRevErr != nil {
+		return nil, nil, jsonRevErr
+	}
+
+	return &jwks, revMap, err
 }

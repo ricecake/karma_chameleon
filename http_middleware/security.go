@@ -97,7 +97,11 @@ func SecurityMiddleware() gin.HandlerFunc {
 		// allow.
 		// if there are path restrictions, defer to those if the origin is allowed.
 		// origin should allow wildcards.
+		// should do something like "replace '*' with regex for single dns label, and then anchor"
 		// If no origin is specified, then that origin is allowed.
+
+		// This might be easiest split into standalone method, that can return if it concludes early.
+
 		// if originAllowed {
 		// 	if hasPathLimit {
 		// 		if pathValid {
