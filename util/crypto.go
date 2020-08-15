@@ -16,15 +16,13 @@ import (
 	"time"
 
 	"github.com/pborman/uuid"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/crypto/pbkdf2"
 	"golang.org/x/crypto/sha3"
 	"gopkg.in/square/go-jose.v2"
 	"gopkg.in/square/go-jose.v2/jwt"
-
-	"github.com/fresh8/go-cache/cacher"
-	engine "github.com/fresh8/go-cache/engine/memory"
 )
 
 // Hashing, encrypting, and strong random generation
@@ -227,6 +225,7 @@ func (rev *RevMap) Add(field, key string, created, duration int) {
 			CreatedAt int `json:"created_at"`
 			ExpiresIn int `json:"expires_in"`
 		})
+		revMap[field] = typeMap
 	}
 	typeMap[key] = struct {
 		CreatedAt int `json:"created_at"`
@@ -238,6 +237,8 @@ func (rev *RevMap) Add(field, key string, created, duration int) {
 }
 
 func (rev *RevMap) Revoked(field, key string) bool {
+	// TODO: This should acceppt an issued time, and allow the field if it was
+	//       issued after the revocation was entered.
 	if fieldKeys, found := rev.cache[field]; found {
 		_, found := fieldKeys[key]
 		return found
@@ -250,55 +251,65 @@ type VerifierCache interface {
 }
 
 type IdpVerifierCache struct {
-	engine *engine.Engine
-	cacher cacher.Cacher
+	keyCache *Cacher
+	revCache *Cacher
 }
 
 func NewIdpVerifierCache() (newCacher *IdpVerifierCache) {
 	newCacher = &IdpVerifierCache{}
-	newCacher.engine = engine.NewMemoryStore(15 * time.Second)
-	newCacher.cacher = cacher.NewCacher(newCacher.engine, 10, 10)
+
+	newCacher.keyCache = NewCacher(60*time.Second, func() (interface{}, error) {
+		reqUrl, urlErr := url.Parse(viper.GetString("basic.auth"))
+		if urlErr != nil {
+			log.Error(urlErr)
+			return nil, urlErr
+		}
+		reqUrl.Path = "/publickeys"
+		body, getErr := get(reqUrl.String())
+		if getErr != nil {
+			log.Error(urlErr)
+			return nil, getErr
+		}
+
+		var jwks jose.JSONWebKeySet
+		jsonJwkErr := json.Unmarshal(body, &jwks)
+		if jsonJwkErr != nil {
+			return nil, jsonJwkErr
+		}
+
+		return &jwks, nil
+	})
+
+	newCacher.revCache = NewCacher(60*time.Second, func() (interface{}, error) {
+		reqUrl, urlErr := url.Parse(viper.GetString("basic.auth"))
+		if urlErr != nil {
+			log.Error(urlErr)
+			return nil, urlErr
+		}
+		reqUrl.Path = "/revocation"
+		body, getErr := get(reqUrl.String())
+		if getErr != nil {
+			log.Error(urlErr)
+			return nil, getErr
+		}
+
+		var revMap RevMap
+		jsonRevErr := json.Unmarshal(body, &revMap)
+		if jsonRevErr != nil {
+			return nil, jsonRevErr
+		}
+
+		return &revMap, nil
+	})
+
 	return newCacher
 }
 
 func (verifier *IdpVerifierCache) Fetch() (*jose.JSONWebKeySet, *RevMap, error) {
-	reqUrl, urlErr := url.Parse(viper.GetString("basic.auth"))
+	keys, err := verifier.keyCache.Fetch()
+	revs, err := verifier.revCache.Fetch()
 
-	if urlErr != nil {
-		return nil, nil, urlErr
-	}
-
-	keys, err := verifier.cacher.Get("public-key", time.Now().Add(5*time.Second), func() ([]byte, error) {
-		reqUrl.Path = "/publickeys"
-		return get(reqUrl.String())
-	})()
-
-	if err != nil {
-		return nil, nil, err
-	}
-
-	var jwks jose.JSONWebKeySet
-	jsonJwkErr := json.Unmarshal(keys, &jwks)
-	if jsonJwkErr != nil {
-		return nil, nil, jsonJwkErr
-	}
-
-	revs, err := verifier.cacher.Get("revocation", time.Now().Add(5*time.Second), func() ([]byte, error) {
-		reqUrl.Path = "/revocation"
-		return get(reqUrl.String())
-	})()
-
-	if err != nil {
-		return nil, nil, err
-	}
-
-	var revMap RevMap
-	jsonRevErr := json.Unmarshal(revs, &revMap)
-	if jsonRevErr != nil {
-		return nil, nil, jsonRevErr
-	}
-
-	return &jwks, &revMap, err
+	return keys.(*jose.JSONWebKeySet), revs.(*RevMap), err
 }
 
 func get(url string) (body []byte, err error) {
