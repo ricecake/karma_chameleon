@@ -93,15 +93,15 @@ func NewAuthMiddleware(cacher util.VerifierCache) gin.HandlerFunc {
 
 func checkRevMap(revMap *util.RevMap, token AccessToken) bool {
 	checks := [][]string{
-		[]string{"ctx", token.ContextCode},
-		[]string{"bro", token.Browser},
-		[]string{"jti", token.Code},
-		[]string{"sub", token.UserCode},
-		[]string{"azp", token.ClientId},
+		{"ctx", token.ContextCode},
+		{"bro", token.Browser},
+		{"jti", token.Code},
+		{"sub", token.UserCode},
+		{"azp", token.ClientId},
 	}
 
 	for _, list := range checks {
-		if revMap.Revoked(list[0], list[1]) {
+		if revMap.Revoked(list[0], list[1], int(token.IssuedAt)) {
 			return false
 		}
 	}

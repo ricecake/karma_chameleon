@@ -236,12 +236,14 @@ func (rev *RevMap) Add(field, key string, created, duration int) {
 	}
 }
 
-func (rev *RevMap) Revoked(field, key string) bool {
+func (rev *RevMap) Revoked(field, key string, issued int) bool {
 	// TODO: This should acceppt an issued time, and allow the field if it was
 	//       issued after the revocation was entered.
 	if fieldKeys, found := rev.cache[field]; found {
-		_, found := fieldKeys[key]
-		return found
+		if entry, found := fieldKeys[key]; found {
+			return entry.CreatedAt >= issued
+		}
+		return false
 	}
 	return false
 }
